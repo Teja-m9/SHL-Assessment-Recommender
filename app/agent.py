@@ -56,9 +56,12 @@ class AgentService:
         if not session_id:
             return []
         if self.mongo_collection is not None:
-            doc = self.mongo_collection.find_one({"_id": session_id})
-            if doc:
-                return [Message(**message) for message in doc.get("messages", [])]
+            try:
+                doc = self.mongo_collection.find_one({"_id": session_id})
+                if doc:
+                    return [Message(**message) for message in doc.get("messages", [])]
+            except Exception:
+                self.mongo_collection = None
         return self.session_store.get(session_id, [])
 
     def _save_session(self, session_id: Optional[str], messages: List[Message]) -> None:
@@ -66,18 +69,24 @@ class AgentService:
             return
         self.session_store[session_id] = messages
         if self.mongo_collection is not None:
-            self.mongo_collection.update_one(
-                {"_id": session_id},
-                {"$set": {"messages": [message.model_dump() for message in messages]}},
-                upsert=True,
-            )
+            try:
+                self.mongo_collection.update_one(
+                    {"_id": session_id},
+                    {"$set": {"messages": [message.model_dump() for message in messages]}},
+                    upsert=True,
+                )
+            except Exception:
+                self.mongo_collection = None
 
     def clear_session(self, session_id: Optional[str]) -> None:
         if not session_id:
             return
         self.session_store.pop(session_id, None)
         if self.mongo_collection is not None:
-            self.mongo_collection.delete_one({"_id": session_id})
+            try:
+                self.mongo_collection.delete_one({"_id": session_id})
+            except Exception:
+                self.mongo_collection = None
 
     def handle_chat(self, request: ChatRequest, session_id: Optional[str] = None) -> ChatResponse:
         messages = list(request.messages)

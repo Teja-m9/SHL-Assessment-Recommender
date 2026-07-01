@@ -66,6 +66,7 @@ npm run build
 - Backend: deploy the FastAPI app with the same environment variables as above.
 - Frontend: deploy the Vite build output to Vercel, Netlify, or a similar static host.
 - Set the frontend API base URL with VITE_API_URL if the backend is not running on the default local port.
+- If MongoDB Atlas is temporarily unavailable in production, the backend now falls back to in-memory session storage instead of failing chat requests.
 
 ### Netlify configuration for this repo
 

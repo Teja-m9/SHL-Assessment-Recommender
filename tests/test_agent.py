@@ -147,3 +147,43 @@ def test_groq_response_metadata_is_exposed(monkeypatch):
 
     assert response.reply_source == "groq"
     assert response.llm_model == "llama-3.1-8b-instant"
+
+
+def test_mongo_read_failure_falls_back_to_memory():
+    class FailingCollection:
+        def find_one(self, query):
+            raise RuntimeError("mongo unavailable")
+
+    agent = AgentService()
+    agent.mongo_collection = FailingCollection()
+    agent.session_store["demo-session"] = [Message(role="user", content="cached")]
+
+    loaded = agent._load_session("demo-session")
+
+    assert loaded[0].content == "cached"
+    assert agent.mongo_collection is None
+
+
+def test_mongo_write_failure_does_not_break_chat():
+    class FailingCollection:
+        def update_one(self, *args, **kwargs):
+            raise RuntimeError("mongo unavailable")
+
+    agent = AgentService()
+    agent.mongo_collection = FailingCollection()
+
+    response = agent.handle_chat(
+        ChatRequest(
+            messages=[
+                Message(
+                    role="user",
+                    content="I am hiring for a mid-level Java software engineer and want a cognitive assessment",
+                )
+            ]
+        ),
+        session_id="render-debug",
+    )
+
+    assert response.reply
+    assert response.session_id == "render-debug"
+    assert agent.mongo_collection is None

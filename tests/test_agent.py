@@ -1,0 +1,101 @@
+from app.agent import AgentService
+from app.schemas import ChatRequest, Message
+
+
+def test_clarify_when_query_is_vague():
+    agent = AgentService()
+    request = ChatRequest(messages=[Message(role="user", content="Help me find a test")])
+
+    response = agent.handle_chat(request)
+
+    assert response.end_of_conversation is False
+    assert response.recommendations == []
+    assert "need a little more" in response.reply.lower()
+
+
+def test_recommend_when_context_is_sufficient():
+    agent = AgentService()
+    request = ChatRequest(
+        messages=[
+            Message(
+                role="user",
+                content="I am hiring for a mid-level Java software engineer and want a cognitive assessment",
+            )
+        ]
+    )
+
+    response = agent.handle_chat(request)
+
+    assert response.end_of_conversation is False
+    assert len(response.recommendations) >= 1
+    assert response.recommendations[0].name
+    assert response.recommendations[0].url
+
+
+def test_refine_with_follow_up_constraint():
+    agent = AgentService()
+    request = ChatRequest(
+        messages=[
+            Message(role="user", content="I need a cognitive assessment for a mid-level Java engineer"),
+            Message(role="assistant", content="I found a shortlist for this role."),
+            Message(role="user", content="Add personality tests too"),
+        ]
+    )
+
+    response = agent.handle_chat(request)
+
+    assert response.end_of_conversation is False
+    assert len(response.recommendations) >= 1
+    assert any("personality" in item.test_type.lower() for item in response.recommendations)
+
+
+def test_compare_named_assessments():
+    agent = AgentService()
+    request = ChatRequest(
+        messages=[Message(role="user", content="Compare SHL Cognitive Ability Test and SHL Java Programming Test")]
+    )
+
+    response = agent.handle_chat(request)
+
+    assert response.end_of_conversation is False
+    assert response.state == "comparing"
+    assert response.comparison_summary
+    assert len(response.recommendations) >= 2
+    assert any("Cognitive" in item.name for item in response.recommendations)
+    assert any("Java" in item.name for item in response.recommendations)
+
+
+def test_refinement_returns_refining_state():
+    agent = AgentService()
+    request = ChatRequest(
+        messages=[
+            Message(role="user", content="I need a cognitive assessment for a mid-level Java engineer"),
+            Message(role="assistant", content="I found a shortlist for this role."),
+            Message(role="user", content="Add personality tests too"),
+        ]
+    )
+
+    response = agent.handle_chat(request)
+
+    assert response.state == "refining"
+
+
+def test_recommend_for_senior_java_skills_request():
+    agent = AgentService()
+    request = ChatRequest(messages=[Message(role="user", content="I want senior level java skills assessment")])
+
+    response = agent.handle_chat(request)
+
+    assert response.end_of_conversation is False
+    assert len(response.recommendations) >= 1
+    assert any("Java" in item.name for item in response.recommendations)
+    assert response.state == "recommending"
+
+
+def test_groq_fallback_uses_catalog_reply_when_key_missing(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    agent = AgentService()
+
+    reply = agent._maybe_enhance_reply("I want senior java assessment", "Catalog fallback", [])
+
+    assert reply == "Catalog fallback"

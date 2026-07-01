@@ -1,0 +1,440 @@
+:root {
+    color-scheme: dark;
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #07111f;
+    color: #f4f7ff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #09111d 0%, #101c31 100%);
+}
+
+button,
+input {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+.app-shell {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+    min-height: 100vh;
+}
+
+.sidebar,
+.chat-card,
+.recommendations-card {
+    background: rgba(12, 20, 35, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+    border-radius: 24px;
+}
+
+.sidebar {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.brand-block {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.brand-badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, #4b86ff, #6a3dff);
+}
+
+.brand-block h2 {
+    margin: 0 0 2px;
+    font-size: 1rem;
+}
+
+.brand-block p {
+    margin: 0;
+    color: #8ea4c7;
+    font-size: 0.9rem;
+}
+
+.sidebar-card {
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.history-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    border: none;
+    background: rgba(255, 255, 255, 0.04);
+    color: #e7eeff;
+    padding: 9px 10px;
+    border-radius: 12px;
+    text-align: left;
+}
+
+.history-title {
+    font-size: 0.92rem;
+}
+
+.history-time {
+    font-size: 0.74rem;
+    color: #8ea4c7;
+}
+
+.history-empty {
+    color: #8ea4c7;
+    font-size: 0.9rem;
+}
+
+.sidebar-label {
+    margin: 0 0 8px;
+    color: #90a2c4;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(88, 209, 144, 0.16);
+    color: #7fe6b4;
+    font-size: 0.94rem;
+}
+
+.prompt-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.prompt-list button {
+    border: none;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #131f33;
+    color: #e4ecff;
+}
+
+.main-panel {
+    display: grid;
+    gap: 16px;
+}
+
+.chat-card {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 560px;
+}
+
+.chat-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 14px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chat-title-block {
+    flex: 1;
+}
+
+.chat-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.ghost-button {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #e7eeff;
+    padding: 8px 12px;
+}
+
+.ghost-button.primary {
+    background: linear-gradient(135deg, rgba(75, 134, 255, 0.2), rgba(106, 61, 255, 0.24));
+    border-color: rgba(120, 157, 255, 0.36);
+}
+
+.chat-header-badge {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4b86ff, #6a3dff);
+    box-shadow: 0 0 0 6px rgba(75, 134, 255, 0.18);
+}
+
+.chat-header h3 {
+    margin: 0 0 2px;
+    font-size: 1rem;
+}
+
+.chat-header p {
+    margin: 0;
+    color: #8ea4c7;
+    font-size: 0.9rem;
+}
+
+.messages {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+    padding: 6px 6px 6px 0;
+}
+
+.bubble {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    max-width: 88%;
+    animation: fadeUp 0.25s ease both;
+}
+
+.bubble.assistant {
+    align-self: flex-start;
+}
+
+.bubble.user {
+    align-self: flex-end;
+}
+
+.bubble.user {
+    flex-direction: row-reverse;
+}
+
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+}
+
+.bubble.assistant .avatar {
+    background: linear-gradient(135deg, #4b86ff, #6a3dff);
+}
+
+.bubble.user .avatar {
+    background: linear-gradient(135deg, #20c997, #38bdf8);
+}
+
+.bubble-content {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.bubble-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.74rem;
+    color: #8ea4c7;
+    padding-left: 2px;
+}
+
+.bubble-text {
+    padding: 10px 12px;
+    border-radius: 16px 16px 16px 6px;
+    line-height: 1.55;
+    background: rgba(255, 255, 255, 0.06);
+    color: #eef5ff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.bubble.user .bubble-text {
+    background: linear-gradient(135deg, #2445d4, #3d65ff);
+    border-radius: 18px 18px 6px 18px;
+}
+
+.composer {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.composer input {
+    flex: 1;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 12px;
+    background: transparent;
+    color: white;
+    outline: none;
+}
+
+.composer button {
+    border: none;
+    border-radius: 999px;
+    padding: 0 14px;
+    background: linear-gradient(135deg, #4b86ff, #6a3dff);
+    color: white;
+    min-width: 84px;
+    height: 40px;
+}
+
+.recommendations-card {
+    padding: 18px 20px;
+}
+
+.recommendations-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.recommendations-header h3 {
+    margin: 0;
+}
+
+.recommendations-header span {
+    color: #8ea4c7;
+    font-size: 0.9rem;
+}
+
+.empty-state {
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(75, 134, 255, 0.12), rgba(106, 61, 255, 0.12));
+    color: #8ea4c7;
+}
+
+.empty-state h4 {
+    margin: 0 0 6px;
+    color: #f0f6ff;
+}
+
+.empty-state p {
+    margin: 0;
+}
+
+.recommendation {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: start;
+    padding: 12px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: inherit;
+    text-decoration: none;
+}
+
+.recommendation strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.recommendation p {
+    margin: 0;
+    color: #8ea4c7;
+}
+
+.recommendation span {
+    color: #7fe6b4;
+    text-transform: capitalize;
+    white-space: nowrap;
+}
+
+@keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 980px) {
+    .app-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        order: 2;
+    }
+}
+
+@media (max-width: 640px) {
+    .app-shell {
+        padding: 12px;
+    }
+
+    .bubble {
+        max-width: 100%;
+    }
+
+    .composer {
+        flex-direction: column;
+    }
+
+    .composer button {
+        height: 46px;
+    }
+
+    .chat-header {
+        flex-wrap: wrap;
+    }
+
+    .chat-actions {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .ghost-button {
+        flex: 1;
+    }
+}

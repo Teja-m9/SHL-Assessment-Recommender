@@ -1,0 +1,83 @@
+[
+  {
+    "name": "SHL Cognitive Ability Test",
+    "url": "https://www.shl.com/en/cognitive-ability-test",
+    "test_type": "cognitive",
+    "description": "A cognitive assessment for measuring reasoning and problem-solving aptitude.",
+    "duration": 45,
+    "job_levels": [
+      "mid",
+      "senior"
+    ],
+    "languages": [
+      "English"
+    ],
+    "remote_testing": true,
+    "adaptive_irt": true
+  },
+  {
+    "name": "SHL Numerical Reasoning Test",
+    "url": "https://www.shl.com/en/numerical-reasoning-test",
+    "test_type": "cognitive",
+    "description": "A numeracy-focused assessment ideal for analytical and finance roles.",
+    "duration": 25,
+    "job_levels": [
+      "entry",
+      "mid"
+    ],
+    "languages": [
+      "English"
+    ],
+    "remote_testing": true,
+    "adaptive_irt": false
+  },
+  {
+    "name": "SHL Verbal Reasoning Test",
+    "url": "https://www.shl.com/en/verbal-reasoning-test",
+    "test_type": "cognitive",
+    "description": "Assesses language comprehension and written information evaluation.",
+    "duration": 20,
+    "job_levels": [
+      "entry",
+      "mid",
+      "senior"
+    ],
+    "languages": [
+      "English"
+    ],
+    "remote_testing": true,
+    "adaptive_irt": false
+  },
+  {
+    "name": "SHL Personality Questionnaire",
+    "url": "https://www.shl.com/en/personality-questionnaire",
+    "test_type": "personality",
+    "description": "Measures workplace personality traits for role fit and team compatibility.",
+    "duration": 20,
+    "job_levels": [
+      "mid",
+      "senior"
+    ],
+    "languages": [
+      "English"
+    ],
+    "remote_testing": true,
+    "adaptive_irt": false
+  },
+  {
+    "name": "SHL Java Programming Test",
+    "url": "https://www.shl.com/en/java-programming-test",
+    "test_type": "skills",
+    "description": "A practical Java coding assessment for software engineering candidates.",
+    "duration": 60,
+    "job_levels": [
+      "mid",
+      "senior"
+    ],
+    "languages": [
+      "English"
+    ],
+    "remote_testing": true,
+    "adaptive_irt": false
+  }
+]

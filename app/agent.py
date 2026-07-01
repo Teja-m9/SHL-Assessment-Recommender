@@ -16,7 +16,22 @@ class AgentService:
         self.catalog = catalog or Catalog()
         self.session_store = {}
         self.mongo_collection = None
+        self.groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        self.groq_temperature = float(os.getenv("GROQ_TEMPERATURE", "0.2"))
+        self.groq_max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "220"))
+        self.groq_client = self._init_groq_client()
         self._init_persistence()
+
+    def _init_groq_client(self):
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            return None
+        try:
+            from groq import Groq
+
+            return Groq(api_key=api_key)
+        except Exception:
+            return None
 
     def _init_persistence(self) -> None:
         uri = os.getenv("MONGODB_URI")
@@ -69,7 +84,7 @@ class AgentService:
         resolved_session_id = session_id or str(uuid.uuid4())
 
         if not messages:
-            return ChatResponse(
+            return self._build_response(
                 reply="I can help you find a suitable SHL assessment. Tell me about the role and the kind of test you need.",
                 recommendations=[],
                 end_of_conversation=False,
@@ -84,32 +99,109 @@ class AgentService:
 
         latest_user = self._latest_user_message(messages)
         if self._is_refusal_trigger(latest_user):
-            return ChatResponse(reply="I can help with SHL assessment recommendations, but I can’t help with legal or off-topic advice.", recommendations=[], end_of_conversation=False, state="refuse", session_id=resolved_session_id)
+            return self._build_response(
+                reply="I can help with SHL assessment recommendations, but I can't help with legal or off-topic advice.",
+                recommendations=[],
+                end_of_conversation=False,
+                state="refuse",
+                session_id=resolved_session_id,
+            )
 
         if self._is_comparison_request(latest_user):
             named_items = self._extract_named_items(latest_user)
             matches = [self.catalog.search(item)[0] for item in named_items if self.catalog.search(item)]
             if matches:
                 summary = self._build_comparison_summary(matches)
-                return ChatResponse(reply="Here is a direct comparison based on the catalog entries you named.", recommendations=matches, end_of_conversation=False, state="comparing", comparison_summary=summary, session_id=resolved_session_id)
+                comparison_reply, reply_source, llm_model = self._maybe_enhance_reply(
+                    latest_user,
+                    "Here is a direct comparison based on the catalog entries you named.",
+                    matches,
+                    intent="comparison",
+                )
+                return self._build_response(
+                    reply=comparison_reply,
+                    recommendations=matches,
+                    end_of_conversation=False,
+                    state="comparing",
+                    comparison_summary=summary,
+                    session_id=resolved_session_id,
+                    reply_source=reply_source,
+                    llm_model=llm_model,
+                )
 
         slots = self._extract_slots(messages, latest_user)
         if self._needs_clarification(slots) and not self._is_refinement_request(latest_user):
-            return ChatResponse(reply="I need a little more context before I recommend anything. Tell me the role, seniority, and whether you want a cognitive, skills, or personality test.", recommendations=[], end_of_conversation=False, state="clarifying", session_id=resolved_session_id)
+            clarification_reply, reply_source, llm_model = self._maybe_enhance_reply(
+                latest_user,
+                "I need a little more context before I recommend anything. Tell me the role, seniority, and whether you want a cognitive, skills, or personality test.",
+                [],
+                intent="clarification",
+            )
+            return self._build_response(
+                reply=clarification_reply,
+                recommendations=[],
+                end_of_conversation=False,
+                state="clarifying",
+                session_id=resolved_session_id,
+                reply_source=reply_source,
+                llm_model=llm_model,
+            )
 
         if self._is_refinement_request(latest_user):
             matches = self.catalog.search(self._build_query(slots) or latest_user)
             if matches:
-                return ChatResponse(reply="I’ve updated the shortlist to include your new constraint.", recommendations=matches[:3], end_of_conversation=False, state="refining", session_id=resolved_session_id)
+                refined = matches[:3]
+                refinement_reply, reply_source, llm_model = self._maybe_enhance_reply(
+                    latest_user,
+                    "I've updated the shortlist to include your new constraint.",
+                    refined,
+                    intent="refinement",
+                )
+                return self._build_response(
+                    reply=refinement_reply,
+                    recommendations=refined,
+                    end_of_conversation=False,
+                    state="refining",
+                    session_id=resolved_session_id,
+                    reply_source=reply_source,
+                    llm_model=llm_model,
+                )
 
         matches = self.catalog.search(self._build_query(slots))
         if not matches:
-            return ChatResponse(reply="I couldn’t find a strong match from the catalog. I can try a different role, level, or test type.", recommendations=[], end_of_conversation=False, state="clarifying", session_id=resolved_session_id)
+            no_match_reply, reply_source, llm_model = self._maybe_enhance_reply(
+                latest_user,
+                "I couldn't find a strong match from the catalog. I can try a different role, level, or test type.",
+                [],
+                intent="no_match",
+            )
+            return self._build_response(
+                reply=no_match_reply,
+                recommendations=[],
+                end_of_conversation=False,
+                state="clarifying",
+                session_id=resolved_session_id,
+                reply_source=reply_source,
+                llm_model=llm_model,
+            )
 
         selected = matches[:3]
         reply = self._build_reply(slots, selected)
-        enhanced_reply = self._maybe_enhance_reply(latest_user, reply, selected)
-        return ChatResponse(reply=enhanced_reply, recommendations=selected, end_of_conversation=False, state="recommending", session_id=resolved_session_id)
+        enhanced_reply, reply_source, llm_model = self._maybe_enhance_reply(
+            latest_user,
+            reply,
+            selected,
+            intent="recommendation",
+        )
+        return self._build_response(
+            reply=enhanced_reply,
+            recommendations=selected,
+            end_of_conversation=False,
+            state="recommending",
+            session_id=resolved_session_id,
+            reply_source=reply_source,
+            llm_model=llm_model,
+        )
 
     def _latest_user_message(self, messages: List[Message]) -> str:
         for message in reversed(messages):
@@ -119,7 +211,13 @@ class AgentService:
 
     def _is_refusal_trigger(self, text: str) -> bool:
         lower = text.lower()
-        refusal_terms = ["legal advice", "disability", "interview question", "ignore previous instructions", "prompt injection"]
+        refusal_terms = [
+            "legal advice",
+            "disability",
+            "interview question",
+            "ignore previous instructions",
+            "prompt injection",
+        ]
         return any(term in lower for term in refusal_terms)
 
     def _is_comparison_request(self, text: str) -> bool:
@@ -147,7 +245,16 @@ class AgentService:
         latest_text = latest_text or text
         slots = {"role": None, "seniority": None, "test_type": None, "skills": None}
 
-        role_patterns = [r"software engineer", r"software developer", r"engineer", r"developer", r"analyst", r"manager", r"designer", r"java"]
+        role_patterns = [
+            r"software engineer",
+            r"software developer",
+            r"engineer",
+            r"developer",
+            r"analyst",
+            r"manager",
+            r"designer",
+            r"java",
+        ]
         for pattern in role_patterns:
             if re.search(pattern, text, re.IGNORECASE):
                 slots["role"] = pattern
@@ -207,37 +314,60 @@ class AgentService:
             f"It is a {first.test_type} assessment and fits the context you described."
         )
 
-    def _maybe_enhance_reply(self, user_text: str, base_reply: str, recommendations: List[Recommendation]) -> str:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            return base_reply
+    def _maybe_enhance_reply(
+        self,
+        user_text: str,
+        base_reply: str,
+        recommendations: List[Recommendation],
+        intent: str,
+    ) -> tuple[str, str, Optional[str]]:
+        if self.groq_client is None:
+            return base_reply, "catalog", None
 
         try:
-            from groq import Groq
-        except Exception:
-            return base_reply
-
-        try:
-            client = Groq(api_key=api_key)
             prompt = (
-                "You are an SHL assessment assistant. Rewrite the following answer to be more concise and helpful, "
-                "while keeping it grounded in the catalog recommendations.\n\n"
+                "You are an SHL assessment assistant. Rewrite the answer so it stays concise, recruiter-friendly, "
+                "and fully grounded in the provided SHL catalog matches. Never invent assessments, URLs, durations, "
+                "or capabilities that are not present in the provided recommendations.\n\n"
+                f"Intent: {intent}\n"
                 f"User request: {user_text}\n"
                 f"Base answer: {base_reply}\n"
-                f"Recommendations: {', '.join(item.name for item in recommendations[:3])}"
+                f"Recommendations: {self._format_recommendations_for_prompt(recommendations)}"
             )
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[{"role": "system", "content": "You help with SHL assessment recommendations."}, {"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=220,
+            response = self.groq_client.chat.completions.create(
+                model=self.groq_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You help with SHL assessment recommendations. "
+                            "Use the catalog-grounded answer as the source of truth."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=self.groq_temperature,
+                max_tokens=self.groq_max_tokens,
             )
-            return response.choices[0].message.content.strip() or base_reply
+            content = response.choices[0].message.content.strip()
+            if not content:
+                return base_reply, "catalog", None
+            return content, "groq", self.groq_model
         except Exception:
-            return base_reply
+            return base_reply, "catalog", None
+
+    def _format_recommendations_for_prompt(self, recommendations: List[Recommendation]) -> str:
+        if not recommendations:
+            return "No catalog matches available."
+        return " | ".join(
+            f"{item.name} ({item.test_type}): {item.description}" for item in recommendations[:3]
+        )
 
     def _build_comparison_summary(self, recommendations: List[Recommendation]) -> str:
         if len(recommendations) < 2:
             return "Only one matching assessment was found."
         first, second = recommendations[0], recommendations[1]
         return f"{first.name} is a {first.test_type} assessment, while {second.name} is a {second.test_type} assessment."
+
+    def _build_response(self, **kwargs) -> ChatResponse:
+        return ChatResponse(**kwargs)

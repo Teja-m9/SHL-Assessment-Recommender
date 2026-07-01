@@ -26,3 +26,5 @@ class ChatResponse(BaseModel):
     state: str = "clarifying"
     comparison_summary: Optional[str] = None
     session_id: Optional[str] = None
+    reply_source: str = "catalog"
+    llm_model: Optional[str] = None

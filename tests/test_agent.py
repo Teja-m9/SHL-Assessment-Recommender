@@ -96,6 +96,54 @@ def test_groq_fallback_uses_catalog_reply_when_key_missing(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     agent = AgentService()
 
-    reply = agent._maybe_enhance_reply("I want senior java assessment", "Catalog fallback", [])
+    reply, reply_source, llm_model = agent._maybe_enhance_reply(
+        "I want senior java assessment",
+        "Catalog fallback",
+        [],
+        intent="recommendation",
+    )
 
     assert reply == "Catalog fallback"
+    assert reply_source == "catalog"
+    assert llm_model is None
+
+
+def test_groq_response_metadata_is_exposed(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "demo-key")
+    monkeypatch.setenv("GROQ_MODEL", "llama-3.1-8b-instant")
+
+    class FakeGroqClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    class FakeMessage:
+                        content = "Shortlisted a grounded SHL recommendation for your Java hiring need."
+
+                    class FakeChoice:
+                        message = FakeMessage()
+
+                    class FakeResponse:
+                        choices = [FakeChoice()]
+
+                    return FakeResponse()
+
+    def fake_init(self):
+        return FakeGroqClient()
+
+    monkeypatch.setattr(AgentService, "_init_groq_client", fake_init)
+    agent = AgentService()
+
+    response = agent.handle_chat(
+        ChatRequest(
+            messages=[
+                Message(
+                    role="user",
+                    content="I am hiring for a mid-level Java software engineer and want a cognitive assessment",
+                )
+            ]
+        )
+    )
+
+    assert response.reply_source == "groq"
+    assert response.llm_model == "llama-3.1-8b-instant"

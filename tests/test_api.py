@@ -21,6 +21,7 @@ def test_health_and_chat_endpoints():
     data = chat.json()
     assert "reply" in data
     assert "recommendations" in data
+    assert "reply_source" in data
 
 
 def test_api_supports_browser_requests():

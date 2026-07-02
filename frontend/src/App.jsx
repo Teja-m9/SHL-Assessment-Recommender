@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const defaultApiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+const conversationStorageKey = 'shl-assessment-compass-history';
 const starterPrompts = [
     'I need a cognitive assessment for a mid-level Java engineer',
     'Compare SHL Cognitive Ability Test and SHL Java Programming Test',
@@ -8,18 +9,47 @@ const starterPrompts = [
 ];
 
 const formatTimestamp = (date) => new Date(date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const createSessionId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+const createAssistantGreeting = () => ({
+    role: 'assistant',
+    content: 'Hi! Share the role, seniority, and test type, and I will recommend SHL assessments from the catalog.',
+    createdAt: new Date().toISOString(),
+});
+
+const createMessage = (role, content) => ({
+    role,
+    content,
+    createdAt: new Date().toISOString(),
+});
+
+const createHistoryTitle = (messages) => {
+    const firstUserMessage = messages.find((message) => message.role === 'user')?.content;
+    if (!firstUserMessage) return 'Untitled conversation';
+    return firstUserMessage.length > 58 ? `${firstUserMessage.slice(0, 58)}...` : firstUserMessage;
+};
 
 function App() {
-    const [messages, setMessages] = useState([
-        { role: 'assistant', content: 'Hi! Share the role, seniority, and test type, and I will recommend SHL assessments from the catalog.' },
-    ]);
+    const [messages, setMessages] = useState([createAssistantGreeting()]);
     const [input, setInput] = useState('');
     const [recommendations, setRecommendations] = useState([]);
-    const [responseMeta, setResponseMeta] = useState({ reply_source: 'catalog', llm_model: null, state: 'clarifying' });
+    const [conversationHistory, setConversationHistory] = useState([]);
+    const [activeConversationId, setActiveConversationId] = useState(createSessionId());
     const [status, setStatus] = useState('Checking service...');
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
+        try {
+            const saved = localStorage.getItem(conversationStorageKey);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) {
+                    setConversationHistory(parsed);
+                }
+            }
+        } catch {
+            setConversationHistory([]);
+        }
+
         const checkHealth = async () => {
             try {
                 const response = await fetch(`${defaultApiUrl}/health`);
@@ -32,11 +62,36 @@ function App() {
         checkHealth();
     }, []);
 
+    useEffect(() => {
+        localStorage.setItem(conversationStorageKey, JSON.stringify(conversationHistory));
+    }, [conversationHistory]);
+
+    useEffect(() => {
+        const hasUserMessages = messages.some((message) => message.role === 'user');
+        if (!hasUserMessages) return;
+
+        const updatedAt = new Date().toISOString();
+        const nextEntry = {
+            id: activeConversationId,
+            title: createHistoryTitle(messages),
+            updatedAt,
+            messages,
+            recommendations,
+        };
+
+        setConversationHistory((previous) => {
+            const withoutActive = previous.filter((entry) => entry.id !== activeConversationId);
+            return [nextEntry, ...withoutActive].sort(
+                (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+            );
+        });
+    }, [activeConversationId, messages, recommendations]);
+
     const handleSend = async (text) => {
         const prompt = text.trim();
         if (!prompt || loading) return;
 
-        const nextMessages = [...messages, { role: 'user', content: prompt }];
+        const nextMessages = [...messages, createMessage('user', prompt)];
         setMessages(nextMessages);
         setInput('');
         setLoading(true);
@@ -56,16 +111,11 @@ function App() {
                 throw new Error(data.detail || 'Request failed');
             }
 
-            setMessages([...nextMessages, { role: 'assistant', content: data.reply }]);
+            setMessages([...nextMessages, createMessage('assistant', data.reply)]);
             setRecommendations(data.recommendations || []);
-            setResponseMeta({
-                reply_source: data.reply_source || 'catalog',
-                llm_model: data.llm_model || null,
-                state: data.state || (data.end_of_conversation ? 'recommending' : 'clarifying'),
-            });
             setStatus(data.end_of_conversation ? 'Shortlist ready' : 'Need more context');
         } catch (error) {
-            setMessages([...nextMessages, { role: 'assistant', content: error.message || 'Something went wrong.' }]);
+            setMessages([...nextMessages, createMessage('assistant', error.message || 'Something went wrong.')]);
             setStatus('Request failed');
         } finally {
             setLoading(false);
@@ -73,13 +123,43 @@ function App() {
     };
 
     const resetConversation = () => {
-        setMessages([
-            { role: 'assistant', content: 'Hi! Share the role, seniority, and test type, and I will recommend SHL assessments from the catalog.' },
-        ]);
+        setMessages([createAssistantGreeting()]);
         setRecommendations([]);
-        setResponseMeta({ reply_source: 'catalog', llm_model: null, state: 'clarifying' });
+        setActiveConversationId(createSessionId());
         setStatus('Chat cleared');
         setInput('');
+    };
+
+    const loadConversation = (entry) => {
+        setActiveConversationId(entry.id);
+        setMessages(entry.messages || [createAssistantGreeting()]);
+        setRecommendations(entry.recommendations || []);
+        setStatus('Conversation loaded');
+        setInput('');
+    };
+
+    const deleteConversation = (conversationId) => {
+        setConversationHistory((previous) => {
+            const remaining = previous.filter((entry) => entry.id !== conversationId);
+
+            if (conversationId === activeConversationId) {
+                if (remaining.length > 0) {
+                    const nextActive = remaining[0];
+                    setActiveConversationId(nextActive.id);
+                    setMessages(nextActive.messages || [createAssistantGreeting()]);
+                    setRecommendations(nextActive.recommendations || []);
+                    setStatus('Conversation deleted');
+                } else {
+                    setActiveConversationId(createSessionId());
+                    setMessages([createAssistantGreeting()]);
+                    setRecommendations([]);
+                    setStatus('Conversation deleted');
+                }
+                setInput('');
+            }
+
+            return remaining;
+        });
     };
 
     const promptChips = useMemo(() => starterPrompts, []);
@@ -108,6 +188,34 @@ function App() {
                         ))}
                     </div>
                 </div>
+                <div className="sidebar-card">
+                    <p className="sidebar-label">Conversation history</p>
+                    {conversationHistory.length === 0 ? (
+                        <p className="history-empty">No saved conversations yet.</p>
+                    ) : (
+                        <div className="history-list">
+                            {conversationHistory.map((entry) => (
+                                <div key={entry.id} className="history-item">
+                                    <button
+                                        className={`history-open ${entry.id === activeConversationId ? 'active' : ''}`}
+                                        onClick={() => loadConversation(entry)}
+                                    >
+                                        <span className="history-title">{entry.title}</span>
+                                        <span className="history-time">{formatTimestamp(entry.updatedAt)}</span>
+                                    </button>
+                                    <button
+                                        className="history-delete"
+                                        onClick={() => deleteConversation(entry.id)}
+                                        aria-label={`Delete ${entry.title}`}
+                                        title="Delete conversation"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </aside>
 
             <main className="main-panel">
@@ -117,11 +225,6 @@ function App() {
                         <div className="chat-title-block">
                             <h3>SHL Assessment Assistant</h3>
                             <p>Every request sends the full conversation history</p>
-                            <div className="meta-row">
-                                <span className="meta-pill">state: {responseMeta.state}</span>
-                                <span className="meta-pill">source: {responseMeta.reply_source}</span>
-                                {responseMeta.llm_model ? <span className="meta-pill">model: {responseMeta.llm_model}</span> : null}
-                            </div>
                         </div>
                         <div className="chat-actions">
                             <button className="ghost-button primary" onClick={resetConversation}>Clear chat</button>
@@ -134,7 +237,7 @@ function App() {
                                 <div className="bubble-content">
                                     <div className="bubble-meta">
                                         <span>{message.role === 'assistant' ? 'Assistant' : 'You'}</span>
-                                        <span>{formatTimestamp(new Date())}</span>
+                                        <span>{formatTimestamp(message.createdAt || new Date())}</span>
                                     </div>
                                     <div className="bubble-text">{message.content}</div>
                                 </div>

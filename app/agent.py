@@ -1,7 +1,8 @@
 import os
 import re
-import uuid
-from typing import List, Optional
+import logging
+from collections import defaultdict
+from typing import Iterable, Optional
 
 from dotenv import load_dotenv
 
@@ -9,18 +10,59 @@ from app.catalog import Catalog
 from app.schemas import ChatRequest, ChatResponse, Message, Recommendation
 
 load_dotenv()
+logger = logging.getLogger(__name__)
+
+
+ROLE_KEYWORDS = {
+    "software engineer": ["software engineer", "software developer", "developer", "engineer", "programmer"],
+    "data analyst": ["data analyst", "analyst", "analytics"],
+    "manager": ["manager", "lead", "leadership"],
+    "designer": ["designer", "design"],
+}
+
+SENIORITY_KEYWORDS = {
+    "entry-level": ["entry level", "entry-level", "graduate", "junior", "0-2 years"],
+    "mid-level": ["mid level", "mid-level", "intermediate", "3 years", "4 years", "5 years"],
+    "senior": ["senior", "principal", "staff", "lead"],
+}
+
+TEST_TYPE_KEYWORDS = {
+    "cognitive": ["cognitive", "aptitude", "reasoning", "ability"],
+    "skills": ["skills", "skill", "technical", "coding", "programming"],
+    "personality": ["personality", "behavior", "behaviour", "opq"],
+}
+
+SKILL_KEYWORDS = [
+    "java",
+    "javascript",
+    "python",
+    "sql",
+    "excel",
+    "sales",
+    "customer service",
+    "leadership",
+    "finance",
+    "data",
+]
+
+REFINEMENT_PREFIXES = (
+    "add ",
+    "also add",
+    "include ",
+    "instead ",
+    "remove ",
+    "swap ",
+    "make it ",
+)
 
 
 class AgentService:
     def __init__(self, catalog: Optional[Catalog] = None) -> None:
         self.catalog = catalog or Catalog()
-        self.session_store = {}
-        self.mongo_collection = None
         self.groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
         self.groq_temperature = float(os.getenv("GROQ_TEMPERATURE", "0.2"))
         self.groq_max_tokens = int(os.getenv("GROQ_MAX_TOKENS", "220"))
         self.groq_client = self._init_groq_client()
-        self._init_persistence()
 
     def _init_groq_client(self):
         api_key = os.getenv("GROQ_API_KEY")
@@ -33,325 +75,248 @@ class AgentService:
         except Exception:
             return None
 
-    def _init_persistence(self) -> None:
-        uri = os.getenv("MONGODB_URI")
-        if not uri:
-            return
-        try:
-            from pymongo import MongoClient
-
-            client = MongoClient(uri, serverSelectionTimeoutMS=3000)
-            database_name = None
-            if "/" in uri.split("mongodb+srv://", 1)[-1]:
-                candidate = uri.split("mongodb+srv://", 1)[-1].split("/", 1)[1]
-                if candidate and "?" not in candidate:
-                    database_name = candidate.split("?", 1)[0]
-            if not database_name:
-                database_name = "shl_assessment"
-            self.mongo_collection = client[database_name].get_collection("chat_sessions")
-        except Exception:
-            self.mongo_collection = None
-
-    def _load_session(self, session_id: Optional[str]) -> List[Message]:
-        if not session_id:
-            return []
-        if self.mongo_collection is not None:
-            try:
-                doc = self.mongo_collection.find_one({"_id": session_id})
-                if doc:
-                    return [Message(**message) for message in doc.get("messages", [])]
-            except Exception:
-                self.mongo_collection = None
-        return self.session_store.get(session_id, [])
-
-    def _save_session(self, session_id: Optional[str], messages: List[Message]) -> None:
-        if not session_id:
-            return
-        self.session_store[session_id] = messages
-        if self.mongo_collection is not None:
-            try:
-                self.mongo_collection.update_one(
-                    {"_id": session_id},
-                    {"$set": {"messages": [message.model_dump() for message in messages]}},
-                    upsert=True,
-                )
-            except Exception:
-                self.mongo_collection = None
-
-    def clear_session(self, session_id: Optional[str]) -> None:
-        if not session_id:
-            return
-        self.session_store.pop(session_id, None)
-        if self.mongo_collection is not None:
-            try:
-                self.mongo_collection.delete_one({"_id": session_id})
-            except Exception:
-                self.mongo_collection = None
-
-    def handle_chat(self, request: ChatRequest, session_id: Optional[str] = None) -> ChatResponse:
+    def handle_chat(self, request: ChatRequest) -> ChatResponse:
         messages = list(request.messages)
-        resolved_session_id = session_id or str(uuid.uuid4())
+        latest_user = self._latest_user_message(messages)
 
-        if not messages:
-            return self._build_response(
-                reply="I can help you find a suitable SHL assessment. Tell me about the role and the kind of test you need.",
+        if not latest_user:
+            return self._finalize_response(
+                user_text="",
+                base_reply="Tell me about the role, seniority, and assessment need, and I will recommend SHL assessments from the catalog.",
                 recommendations=[],
+                intent="clarification",
                 end_of_conversation=False,
-                session_id=resolved_session_id,
+                state="clarifying",
             )
 
-        if resolved_session_id:
-            existing = self._load_session(resolved_session_id)
-            if existing and len(messages) < len(existing):
-                messages = existing + [message for message in messages if message not in existing]
-            self._save_session(resolved_session_id, messages)
-
-        latest_user = self._latest_user_message(messages)
         if self._is_refusal_trigger(latest_user):
-            return self._build_response(
-                reply="I can help with SHL assessment recommendations, but I can't help with legal or off-topic advice.",
+            return self._finalize_response(
+                user_text=latest_user,
+                base_reply="I can only help with SHL assessment selection. I cannot provide general hiring, legal, or prompt-injection guidance.",
                 recommendations=[],
+                intent="refusal",
                 end_of_conversation=False,
                 state="refuse",
-                session_id=resolved_session_id,
             )
 
         if self._is_comparison_request(latest_user):
-            named_items = self._extract_named_items(latest_user)
-            matches = [self.catalog.search(item)[0] for item in named_items if self.catalog.search(item)]
-            if matches:
-                summary = self._build_comparison_summary(matches)
-                comparison_reply, reply_source, llm_model = self._maybe_enhance_reply(
-                    latest_user,
-                    "Here is a direct comparison based on the catalog entries you named.",
-                    matches,
+            compared = self.catalog.find_assessments_in_text(latest_user)
+            if len(compared) >= 2:
+                reply = self._build_comparison_reply(compared[:2])
+                return self._finalize_response(
+                    user_text=latest_user,
+                    base_reply=reply,
+                    recommendations=compared[:2],
                     intent="comparison",
-                )
-                return self._build_response(
-                    reply=comparison_reply,
-                    recommendations=matches,
-                    end_of_conversation=False,
+                    end_of_conversation=True,
                     state="comparing",
-                    comparison_summary=summary,
-                    session_id=resolved_session_id,
-                    reply_source=reply_source,
-                    llm_model=llm_model,
+                    comparison_summary=reply,
                 )
-
-        slots = self._extract_slots(messages, latest_user)
-        if self._needs_clarification(slots) and not self._is_refinement_request(latest_user):
-            clarification_reply, reply_source, llm_model = self._maybe_enhance_reply(
-                latest_user,
-                "I need a little more context before I recommend anything. Tell me the role, seniority, and whether you want a cognitive, skills, or personality test.",
-                [],
+            return self._finalize_response(
+                user_text=latest_user,
+                base_reply="Please name the SHL assessments you want compared, and I will compare them using the catalog data only.",
+                recommendations=[],
                 intent="clarification",
-            )
-            return self._build_response(
-                reply=clarification_reply,
-                recommendations=[],
                 end_of_conversation=False,
                 state="clarifying",
-                session_id=resolved_session_id,
-                reply_source=reply_source,
-                llm_model=llm_model,
             )
 
-        if self._is_refinement_request(latest_user):
-            matches = self.catalog.search(self._build_query(slots) or latest_user)
-            if matches:
-                refined = matches[:3]
-                refinement_reply, reply_source, llm_model = self._maybe_enhance_reply(
-                    latest_user,
-                    "I've updated the shortlist to include your new constraint.",
-                    refined,
-                    intent="refinement",
-                )
-                return self._build_response(
-                    reply=refinement_reply,
-                    recommendations=refined,
-                    end_of_conversation=False,
-                    state="refining",
-                    session_id=resolved_session_id,
-                    reply_source=reply_source,
-                    llm_model=llm_model,
-                )
-
-        matches = self.catalog.search(self._build_query(slots))
-        if not matches:
-            no_match_reply, reply_source, llm_model = self._maybe_enhance_reply(
-                latest_user,
-                "I couldn't find a strong match from the catalog. I can try a different role, level, or test type.",
-                [],
-                intent="no_match",
-            )
-            return self._build_response(
-                reply=no_match_reply,
+        profile = self._extract_profile(messages)
+        if self._needs_clarification(profile):
+            return self._finalize_response(
+                user_text=latest_user,
+                base_reply=self._build_clarification_reply(profile),
                 recommendations=[],
+                intent="clarification",
                 end_of_conversation=False,
                 state="clarifying",
-                session_id=resolved_session_id,
-                reply_source=reply_source,
-                llm_model=llm_model,
             )
 
-        selected = matches[:3]
-        reply = self._build_reply(slots, selected)
-        enhanced_reply, reply_source, llm_model = self._maybe_enhance_reply(
-            latest_user,
-            reply,
-            selected,
-            intent="recommendation",
+        recommendations = self.catalog.search(profile, limit=10)
+        if not recommendations:
+            return self._finalize_response(
+                user_text=latest_user,
+                base_reply="I could not find a strong SHL catalog match yet. Try sharing the role, seniority, core skills, or preferred assessment type.",
+                recommendations=[],
+                intent="clarification",
+                end_of_conversation=False,
+                state="clarifying",
+            )
+
+        shortlist = recommendations[: min(5, len(recommendations))]
+        intent = "refinement" if self._is_refinement_turn(messages) else "recommendation"
+        reply = self._build_recommendation_reply(profile, shortlist, intent)
+        return self._finalize_response(
+            user_text=latest_user,
+            base_reply=reply,
+            recommendations=shortlist,
+            intent=intent,
+            end_of_conversation=True,
+            state="refining" if intent == "refinement" else "recommending",
         )
-        return self._build_response(
-            reply=enhanced_reply,
-            recommendations=selected,
-            end_of_conversation=False,
-            state="recommending",
-            session_id=resolved_session_id,
+
+    def _finalize_response(
+        self,
+        user_text: str,
+        base_reply: str,
+        recommendations: list[Recommendation],
+        intent: str,
+        end_of_conversation: bool,
+        state: str,
+        comparison_summary: str | None = None,
+    ) -> ChatResponse:
+        reply, reply_source, llm_model = self._maybe_enhance_reply(user_text, base_reply, recommendations, intent)
+        return ChatResponse(
+            reply=reply,
+            recommendations=recommendations,
+            end_of_conversation=end_of_conversation,
+            state=state,
+            comparison_summary=comparison_summary,
             reply_source=reply_source,
             llm_model=llm_model,
         )
 
-    def _latest_user_message(self, messages: List[Message]) -> str:
-        for message in reversed(messages):
+    def _latest_user_message(self, messages: Iterable[Message]) -> str:
+        for message in reversed(list(messages)):
             if message.role == "user":
-                return message.content
+                return message.content.strip()
         return ""
 
     def _is_refusal_trigger(self, text: str) -> bool:
         lower = text.lower()
         refusal_terms = [
             "legal advice",
-            "disability",
-            "interview question",
             "ignore previous instructions",
             "prompt injection",
+            "what salary should",
+            "write an interview script",
         ]
         return any(term in lower for term in refusal_terms)
 
     def _is_comparison_request(self, text: str) -> bool:
         lower = text.lower()
-        return lower.startswith("compare") or "compare" in lower
+        return "compare" in lower or "difference between" in lower
 
-    def _is_refinement_request(self, text: str) -> bool:
-        lower = text.lower()
-        return any(term in lower for term in ["add", "also", "include", "instead", "only", "no", "with"])
+    def _extract_profile(self, messages: list[Message]) -> dict:
+        user_text = " ".join(message.content for message in messages if message.role == "user")
+        latest_text = self._latest_user_message(messages).lower()
+        normalized = user_text.lower()
 
-    def _extract_named_items(self, text: str) -> List[str]:
-        tokens = re.findall(r"shl [a-z0-9 ]+", text.lower())
-        items = [token.replace("shl ", "").strip().title() for token in tokens]
-        if len(items) >= 2:
-            return items
-
-        fallback = []
-        for name in ["Cognitive Ability Test", "Java Programming Test", "Personality Questionnaire"]:
-            if name.lower() in text.lower():
-                fallback.append(name)
-        return fallback
-
-    def _extract_slots(self, messages: List[Message], latest_text: str = "") -> dict:
-        text = " ".join(message.content for message in messages if message.role == "user")
-        latest_text = latest_text or text
-        slots = {"role": None, "seniority": None, "test_type": None, "skills": None}
-
-        role_patterns = [
-            r"software engineer",
-            r"software developer",
-            r"engineer",
-            r"developer",
-            r"analyst",
-            r"manager",
-            r"designer",
-            r"java",
-        ]
-        for pattern in role_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                slots["role"] = pattern
-                break
-
-        seniority_patterns = [r"entry[- ]level", r"mid[- ]level", r"senior", r"junior", r"senior level", r"mid level"]
-        for pattern in seniority_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                slots["seniority"] = pattern
-                break
-
-        test_type_priority = ["personality", "cognitive", "skills"]
-        test_type_keywords = {
-            "cognitive": [r"cognitive", r"reasoning", r"aptitude"],
-            "skills": [r"coding", r"programming", r"skills", r"technical", r"java skills", r"skill"],
-            "personality": [r"personality", r"behavior"],
+        profile = {
+            "role": self._match_first(ROLE_KEYWORDS, normalized),
+            "seniority": self._match_first(SENIORITY_KEYWORDS, normalized),
+            "test_types": self._collect_matches(TEST_TYPE_KEYWORDS, normalized, latest_text),
+            "skills": self._extract_skills(normalized),
         }
-        for test_type in test_type_priority:
-            if any(re.search(pattern, latest_text, re.IGNORECASE) for pattern in test_type_keywords[test_type]):
-                slots["test_type"] = test_type
-                break
-        if not slots["test_type"]:
-            for test_type in test_type_priority:
-                if any(re.search(pattern, text, re.IGNORECASE) for pattern in test_type_keywords[test_type]):
-                    slots["test_type"] = test_type
-                    break
+        return profile
 
-        skill_patterns = [r"java", r"python", r"sql", r"data", r"finance", r"skills assessment", r"assessment"]
-        for pattern in skill_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                slots["skills"] = pattern
-                break
+    def _match_first(self, keyword_map: dict[str, list[str]], text: str) -> Optional[str]:
+        for canonical, variants in keyword_map.items():
+            if any(variant in text for variant in variants):
+                return canonical
+        return None
 
-        return slots
+    def _collect_matches(
+        self,
+        keyword_map: dict[str, list[str]],
+        text: str,
+        latest_text: str,
+    ) -> list[str]:
+        weighted_matches: dict[str, int] = defaultdict(int)
+        for canonical, variants in keyword_map.items():
+            if any(variant in text for variant in variants):
+                weighted_matches[canonical] += 1
+            if any(variant in latest_text for variant in variants):
+                weighted_matches[canonical] += 2
+        ordered = sorted(weighted_matches.items(), key=lambda item: (-item[1], item[0]))
+        return [name for name, _ in ordered]
 
-    def _needs_clarification(self, slots: dict) -> bool:
-        has_role = bool(slots.get("role"))
-        has_context = bool(slots.get("seniority") or slots.get("test_type") or slots.get("skills"))
-        return not (has_role and has_context)
+    def _extract_skills(self, text: str) -> list[str]:
+        return [skill for skill in SKILL_KEYWORDS if skill in text]
 
-    def _build_query(self, slots: dict) -> str:
-        pieces = []
-        if slots.get("skills"):
-            pieces.append(slots["skills"])
-        if slots.get("seniority"):
-            pieces.append(slots["seniority"])
-        if slots.get("test_type"):
-            pieces.append(slots["test_type"])
-        if slots.get("role"):
-            pieces.append(slots["role"])
-        return " ".join(pieces)
+    def _needs_clarification(self, profile: dict) -> bool:
+        has_role = bool(profile["role"])
+        has_target = bool(profile["test_types"] or profile["skills"])
+        return not (has_role and has_target)
 
-    def _build_reply(self, slots: dict, recommendations: List[Recommendation]) -> str:
-        first = recommendations[0]
+    def _build_clarification_reply(self, profile: dict) -> str:
+        missing = []
+        if not profile["role"]:
+            missing.append("the role")
+        if not profile["test_types"]:
+            missing.append("the assessment type")
+        if not profile["skills"]:
+            missing.append("the key skill area")
+
+        missing_text = ", ".join(missing[:-1])
+        if missing_text and len(missing) > 1:
+            missing_text = f"{missing_text}, and {missing[-1]}"
+        elif missing:
+            missing_text = missing[0]
+        else:
+            missing_text = "a bit more detail"
+
         return (
-            f"I found a shortlist for {slots.get('role') or 'this role'}: {first.name}. "
-            f"It is a {first.test_type} assessment and fits the context you described."
+            f"I need {missing_text} before I recommend SHL assessments. "
+            "Tell me the role, seniority, and whether you need cognitive, personality, or technical testing."
+        )
+
+    def _is_refinement_turn(self, messages: list[Message]) -> bool:
+        user_messages = [message.content.strip().lower() for message in messages if message.role == "user"]
+        if len(user_messages) < 2:
+            return False
+        latest = user_messages[-1]
+        return latest.startswith(REFINEMENT_PREFIXES)
+
+    def _build_recommendation_reply(
+        self,
+        profile: dict,
+        recommendations: list[Recommendation],
+        intent: str,
+    ) -> str:
+        intro = "I updated the shortlist" if intent == "refinement" else "Here is a grounded SHL shortlist"
+        role_text = profile["role"] or "the role"
+        seniority_text = f" for a {profile['seniority']} {role_text}" if profile["seniority"] else f" for {role_text}"
+        type_text = ""
+        if profile["test_types"]:
+            type_text = f" focused on {', '.join(profile['test_types'])} assessment needs"
+
+        bullets = "; ".join(f"{item.name} ({item.url})" for item in recommendations)
+        return f"{intro}{seniority_text}{type_text}: {bullets}."
+
+    def _build_comparison_reply(self, recommendations: list[Recommendation]) -> str:
+        first, second = recommendations[:2]
+        return (
+            f"{first.name} is a {first.test_type} assessment, while {second.name} is a {second.test_type} assessment. "
+            f"You can review them here: {first.url} and {second.url}."
         )
 
     def _maybe_enhance_reply(
         self,
         user_text: str,
         base_reply: str,
-        recommendations: List[Recommendation],
+        recommendations: list[Recommendation],
         intent: str,
-    ) -> tuple[str, str, Optional[str]]:
+    ) -> tuple[str, str, str | None]:
         if self.groq_client is None:
+            logger.info("Groq rewrite skipped: missing client")
             return base_reply, "catalog", None
 
         try:
             prompt = (
-                "You are an SHL assessment assistant. Rewrite the answer so it stays concise, recruiter-friendly, "
-                "and fully grounded in the provided SHL catalog matches. Never invent assessments, URLs, durations, "
-                "or capabilities that are not present in the provided recommendations.\n\n"
+                "Rewrite the answer so it stays concise and recruiter-friendly. "
+                "Do not add any assessment, URL, or claim not present below.\n\n"
                 f"Intent: {intent}\n"
                 f"User request: {user_text}\n"
                 f"Base answer: {base_reply}\n"
-                f"Recommendations: {self._format_recommendations_for_prompt(recommendations)}"
+                f"Grounded matches: {self._format_recommendations(recommendations)}"
             )
             response = self.groq_client.chat.completions.create(
                 model=self.groq_model,
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "You help with SHL assessment recommendations. "
-                            "Use the catalog-grounded answer as the source of truth."
-                        ),
+                        "content": "You only rewrite grounded SHL catalog answers and never invent details.",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -359,24 +324,17 @@ class AgentService:
                 max_tokens=self.groq_max_tokens,
             )
             content = response.choices[0].message.content.strip()
-            if not content:
-                return base_reply, "catalog", None
-            return content, "groq", self.groq_model
-        except Exception:
+            if content:
+                logger.info("Groq rewrite succeeded with model=%s", self.groq_model)
+                return content, "groq", self.groq_model
+
+            logger.info("Groq rewrite returned empty content; using catalog reply")
+            return base_reply, "catalog", None
+        except Exception as exc:
+            logger.warning("Groq rewrite failed; using catalog reply", exc_info=exc)
             return base_reply, "catalog", None
 
-    def _format_recommendations_for_prompt(self, recommendations: List[Recommendation]) -> str:
+    def _format_recommendations(self, recommendations: list[Recommendation]) -> str:
         if not recommendations:
-            return "No catalog matches available."
-        return " | ".join(
-            f"{item.name} ({item.test_type}): {item.description}" for item in recommendations[:3]
-        )
-
-    def _build_comparison_summary(self, recommendations: List[Recommendation]) -> str:
-        if len(recommendations) < 2:
-            return "Only one matching assessment was found."
-        first, second = recommendations[0], recommendations[1]
-        return f"{first.name} is a {first.test_type} assessment, while {second.name} is a {second.test_type} assessment."
-
-    def _build_response(self, **kwargs) -> ChatResponse:
-        return ChatResponse(**kwargs)
+            return "No recommendations."
+        return " | ".join(f"{item.name} ({item.test_type}) -> {item.url}" for item in recommendations)

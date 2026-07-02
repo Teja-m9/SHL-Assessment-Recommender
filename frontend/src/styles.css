@@ -214,6 +214,24 @@ button {
     font-size: 0.9rem;
 }
 
+.meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.meta-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 0.74rem;
+    color: #bdd0f0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .messages {
     flex: 1;
     display: flex;
@@ -383,6 +401,18 @@ button {
 .recommendation span {
     color: #7fe6b4;
     text-transform: capitalize;
+    white-space: nowrap;
+}
+
+.recommendation-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.recommendation-meta small {
+    color: #8ea4c7;
     white-space: nowrap;
 }
 

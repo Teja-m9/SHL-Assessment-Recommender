@@ -1,73 +1,36 @@
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Optional
 
 
 class CatalogScraper:
-    """Small scraper placeholder that can be swapped for a real implementation later."""
+    """
+    Imports a prepared SHL catalog export into the app catalog format.
 
-    def __init__(self, output_path: Optional[Path] = None) -> None:
+    This keeps the runtime app offline-friendly while allowing the repository
+    to ingest a full catalog snapshot when one is available.
+    """
+
+    def __init__(self, source_path: Path, output_path: Optional[Path] = None) -> None:
+        self.source_path = source_path
         self.output_path = output_path or Path(__file__).resolve().parent / "catalog.json"
 
-    def scrape(self) -> List[dict]:
-        # In a real implementation this would fetch and parse SHL catalog pages.
-        # For now it simply preserves the seed catalog shape.
-        seed = [
-            {
-                "name": "SHL Cognitive Ability Test",
-                "url": "https://www.shl.com/en/cognitive-ability-test",
-                "test_type": "cognitive",
-                "description": "A cognitive assessment for measuring reasoning and problem-solving aptitude.",
-                "duration": 45,
-                "job_levels": ["mid", "senior"],
-                "languages": ["English"],
-                "remote_testing": True,
-                "adaptive_irt": True,
-            },
-            {
-                "name": "SHL Numerical Reasoning Test",
-                "url": "https://www.shl.com/en/numerical-reasoning-test",
-                "test_type": "cognitive",
-                "description": "A numeracy-focused assessment ideal for analytical and finance roles.",
-                "duration": 25,
-                "job_levels": ["entry", "mid"],
-                "languages": ["English"],
-                "remote_testing": True,
-                "adaptive_irt": False,
-            },
-            {
-                "name": "SHL Verbal Reasoning Test",
-                "url": "https://www.shl.com/en/verbal-reasoning-test",
-                "test_type": "cognitive",
-                "description": "Assesses language comprehension and written information evaluation.",
-                "duration": 20,
-                "job_levels": ["entry", "mid", "senior"],
-                "languages": ["English"],
-                "remote_testing": True,
-                "adaptive_irt": False,
-            },
-            {
-                "name": "SHL Personality Questionnaire",
-                "url": "https://www.shl.com/en/personality-questionnaire",
-                "test_type": "personality",
-                "description": "Measures workplace personality traits for role fit and team compatibility.",
-                "duration": 20,
-                "job_levels": ["mid", "senior"],
-                "languages": ["English"],
-                "remote_testing": True,
-                "adaptive_irt": False,
-            },
-            {
-                "name": "SHL Java Programming Test",
-                "url": "https://www.shl.com/en/java-programming-test",
-                "test_type": "skills",
-                "description": "A practical Java coding assessment for software engineering candidates.",
-                "duration": 60,
-                "job_levels": ["mid", "senior"],
-                "languages": ["English"],
-                "remote_testing": True,
-                "adaptive_irt": False,
-            },
-        ]
-        self.output_path.write_text(json.dumps(seed, indent=2), encoding="utf-8")
-        return seed
+    def scrape(self) -> list[dict[str, Any]]:
+        with self.source_path.open("r", encoding="utf-8") as handle:
+            raw_items = json.load(handle)
+
+        normalized = [self._normalize_item(item) for item in raw_items]
+        self.output_path.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
+        return normalized
+
+    def _normalize_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "name": item["name"],
+            "url": item["url"],
+            "test_type": item["test_type"],
+            "description": item.get("description", ""),
+            "job_levels": item.get("job_levels", []),
+            "keywords": item.get("keywords", []),
+            "roles": item.get("roles", []),
+            "skills": item.get("skills", []),
+        }

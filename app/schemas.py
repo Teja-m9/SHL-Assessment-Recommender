@@ -1,30 +1,33 @@
-from typing import List, Literal, Optional
+from typing import List, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Message(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     role: Literal["system", "user", "assistant"]
     content: str
 
 
 class ChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     messages: List[Message] = Field(default_factory=list)
 
 
 class Recommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str
     url: str
     test_type: str
-    description: str
+    confidence: float | None = None
 
 
 class ChatResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     reply: str
     recommendations: List[Recommendation] = Field(default_factory=list)
     end_of_conversation: bool = False
-    state: str = "clarifying"
-    comparison_summary: Optional[str] = None
-    session_id: Optional[str] = None
-    reply_source: str = "catalog"
-    llm_model: Optional[str] = None
+    state: str = "recommending"
+    comparison_summary: str | None = None
+    reply_source: Literal["catalog", "groq"] = "catalog"
+    llm_model: str | None = None

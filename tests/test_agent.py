@@ -1,5 +1,5 @@
-from app.agent import AgentService
 from app.schemas import ChatRequest, Message
+from app.services.agent_service import AgentService
 
 
 def test_clarify_when_query_is_vague():

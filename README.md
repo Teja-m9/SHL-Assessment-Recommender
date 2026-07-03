@@ -28,7 +28,7 @@ This project contains a FastAPI backend and a React frontend for recommending SH
 
 The runtime app reads [app/catalog.json](/abs/path/C:/Users/HP/Desktop/SHL-Assignment/app/catalog.json:1).
 
-The repo also includes [app/scraper.py](/abs/path/C:/Users/HP/Desktop/SHL-Assignment/app/scraper.py:1), which imports a prepared SHL catalog export into the normalized app format. That keeps the app offline-friendly while letting you swap in a fuller catalog snapshot without changing the agent logic.
+The repo also includes `app/services/catalog_import_service.py`, which imports a prepared SHL catalog export into the normalized app format. That keeps the app offline-friendly while letting you swap in a fuller catalog snapshot without changing the agent logic.
 
 ## Local setup
 

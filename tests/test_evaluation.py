@@ -1,4 +1,4 @@
-from app.evaluation import DEFAULT_RECRUITER_PERSONA_TRACES, EvaluationHarness
+from app.services.evaluation_service import DEFAULT_RECRUITER_PERSONA_TRACES, EvaluationHarness
 
 
 def test_evaluation_harness_runs_traces():

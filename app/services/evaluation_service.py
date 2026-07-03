@@ -1,7 +1,7 @@
 from typing import Dict, List
 
-from app.agent import AgentService
 from app.schemas import ChatRequest, Message
+from app.services.agent_service import AgentService
 
 
 DEFAULT_RECRUITER_PERSONA_TRACES: Dict[str, List[str]] = {

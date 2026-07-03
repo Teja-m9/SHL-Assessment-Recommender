@@ -62,7 +62,7 @@ def test_chat_is_stateless_and_rejects_session_fields():
 def test_agent_uses_catalog_without_persistence_settings(monkeypatch):
     monkeypatch.setenv("MONGODB_URI", "mongodb+srv://user:pass@cluster0.reuka.mongodb.net/")
 
-    import app.agent as agent_module
+    import app.services.agent_service as agent_module
 
     importlib.reload(agent_module)
     service = agent_module.AgentService()

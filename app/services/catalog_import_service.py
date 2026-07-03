@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-class CatalogScraper:
+class CatalogImportService:
     """
     Imports a prepared SHL catalog export into the app catalog format.
 
@@ -13,7 +13,7 @@ class CatalogScraper:
 
     def __init__(self, source_path: Path, output_path: Optional[Path] = None) -> None:
         self.source_path = source_path
-        self.output_path = output_path or Path(__file__).resolve().parent / "catalog.json"
+        self.output_path = output_path or Path(__file__).resolve().parent.parent / "catalog.json"
 
     def scrape(self) -> list[dict[str, Any]]:
         with self.source_path.open("r", encoding="utf-8") as handle:

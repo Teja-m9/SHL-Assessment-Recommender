@@ -1,13 +1,13 @@
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from app.schemas import Recommendation
+from app.utils import normalize_text
 
 
-DATA_FILE = Path(__file__).resolve().parent / "catalog.json"
+DATA_FILE = Path(__file__).resolve().parent.parent / "catalog.json"
 
 
 @dataclass
@@ -63,12 +63,12 @@ class Catalog:
         return [self._to_recommendation(item, self._to_confidence(score, max_score)) for score, item in top_results]
 
     def find_assessments_in_text(self, text: str, limit: int = 10) -> list[Recommendation]:
-        normalized_text = self._normalize(text)
+        normalized_text = normalize_text(text)
         matches: list[Recommendation] = []
         seen: set[str] = set()
 
         for item in self.items:
-            normalized_name = self._normalize(item.name)
+            normalized_name = normalize_text(item.name)
             short_name = normalized_name.replace("shl ", "", 1)
             if normalized_name in normalized_text or short_name in normalized_text:
                 if item.url not in seen:
@@ -100,10 +100,10 @@ class Catalog:
         return score
 
     def _keyword_overlap(self, needles: list[str], haystack: list[str], weight: int) -> int:
-        normalized_haystack = {self._normalize(value) for value in haystack}
+        normalized_haystack = {normalize_text(value) for value in haystack}
         total = 0
         for needle in needles:
-            if self._normalize(needle) in normalized_haystack:
+            if normalize_text(needle) in normalized_haystack:
                 total += weight
         return total
 
@@ -120,6 +120,3 @@ class Catalog:
             return 0.0
         ratio = score / max_score
         return round(max(0.0, min(1.0, ratio)), 2)
-
-    def _normalize(self, value: str) -> str:
-        return re.sub(r"\s+", " ", value.strip().lower())

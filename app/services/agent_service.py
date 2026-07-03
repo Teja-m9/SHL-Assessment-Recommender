@@ -1,59 +1,24 @@
-import os
-import re
 import logging
+import os
 from collections import defaultdict
 from typing import Iterable, Optional
 
 from dotenv import load_dotenv
 
-from app.catalog import Catalog
+from app.constants import (
+    REFINEMENT_PREFIXES,
+    REFUSAL_TERMS,
+    ROLE_KEYWORDS,
+    SENIORITY_KEYWORDS,
+    SKILL_KEYWORDS,
+    TEST_TYPE_KEYWORDS,
+)
+from app.prompts import GROQ_SYSTEM_PROMPT, build_groq_rewrite_prompt
 from app.schemas import ChatRequest, ChatResponse, Message, Recommendation
+from app.services.catalog_service import Catalog
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-
-
-ROLE_KEYWORDS = {
-    "software engineer": ["software engineer", "software developer", "developer", "engineer", "programmer"],
-    "data analyst": ["data analyst", "analyst", "analytics"],
-    "manager": ["manager", "lead", "leadership"],
-    "designer": ["designer", "design"],
-}
-
-SENIORITY_KEYWORDS = {
-    "entry-level": ["entry level", "entry-level", "graduate", "junior", "0-2 years"],
-    "mid-level": ["mid level", "mid-level", "intermediate", "3 years", "4 years", "5 years"],
-    "senior": ["senior", "principal", "staff", "lead"],
-}
-
-TEST_TYPE_KEYWORDS = {
-    "cognitive": ["cognitive", "aptitude", "reasoning", "ability"],
-    "skills": ["skills", "skill", "technical", "coding", "programming"],
-    "personality": ["personality", "behavior", "behaviour", "opq"],
-}
-
-SKILL_KEYWORDS = [
-    "java",
-    "javascript",
-    "python",
-    "sql",
-    "excel",
-    "sales",
-    "customer service",
-    "leadership",
-    "finance",
-    "data",
-]
-
-REFINEMENT_PREFIXES = (
-    "add ",
-    "also add",
-    "include ",
-    "instead ",
-    "remove ",
-    "swap ",
-    "make it ",
-)
 
 
 class AgentService:
@@ -184,14 +149,7 @@ class AgentService:
 
     def _is_refusal_trigger(self, text: str) -> bool:
         lower = text.lower()
-        refusal_terms = [
-            "legal advice",
-            "ignore previous instructions",
-            "prompt injection",
-            "what salary should",
-            "write an interview script",
-        ]
-        return any(term in lower for term in refusal_terms)
+        return any(term in lower for term in REFUSAL_TERMS)
 
     def _is_comparison_request(self, text: str) -> bool:
         lower = text.lower()
@@ -303,20 +261,18 @@ class AgentService:
             return base_reply, "catalog", None
 
         try:
-            prompt = (
-                "Rewrite the answer so it stays concise and recruiter-friendly. "
-                "Do not add any assessment, URL, or claim not present below.\n\n"
-                f"Intent: {intent}\n"
-                f"User request: {user_text}\n"
-                f"Base answer: {base_reply}\n"
-                f"Grounded matches: {self._format_recommendations(recommendations)}"
+            prompt = build_groq_rewrite_prompt(
+                intent=intent,
+                user_text=user_text,
+                base_reply=base_reply,
+                grounded_matches=self._format_recommendations(recommendations),
             )
             response = self.groq_client.chat.completions.create(
                 model=self.groq_model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You only rewrite grounded SHL catalog answers and never invent details.",
+                        "content": GROQ_SYSTEM_PROMPT,
                     },
                     {"role": "user", "content": prompt},
                 ],

@@ -1,0 +1,156 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 1738 >>
+stream
+BT
+/F1 11 Tf
+50 800 Td
+14 TL
+(Conversational SHL Assessment Recommender - Approach Summary) Tj
+T*
+() Tj
+T*
+(Candidate: SHL Assignment Submission) Tj
+T*
+() Tj
+T*
+(1\) Design Choices) Tj
+T*
+(Goal: build a recruiter-facing API that asks clarifying questions, returns grounded SHL) Tj
+T*
+(recommendations, refines results as constraints change, and compares assessments with catalog) Tj
+T*
+(evidence.) Tj
+T*
+(Architecture: FastAPI backend + React frontend, stateless chat API \(full message history each) Tj
+T*
+(request\).) Tj
+T*
+(Retrieval-first design: catalog decides recommendations; LLM is optional and used only for response) Tj
+T*
+(rewriting.) Tj
+T*
+(Explicit conversation states: clarifying, recommending, refining, comparing, refuse.) Tj
+T*
+(Structured contract: reply, recommendations, end_of_conversation, plus state/source/model metadata and) Tj
+T*
+(confidence.) Tj
+T*
+() Tj
+T*
+(2\) Retrieval Setup) Tj
+T*
+(Data source: normalized local SHL catalog JSON.) Tj
+T*
+(User query parsing extracts role, seniority, test types, and skills.) Tj
+T*
+(Scoring uses weighted overlap: role \(5\), seniority \(4\), test type \(6\), skills/keywords \(4\), plus) Tj
+T*
+(direct type boost.) Tj
+T*
+(Results are ranked and returned as top matches, each with normalized confidence \(score / max_score\).) Tj
+T*
+(Comparison flow uses catalog name matching against mentioned assessments.) Tj
+T*
+() Tj
+T*
+(3\) Prompt Design) Tj
+T*
+(LLM: Groq llama-3.1-8b-instant \(optional\).) Tj
+T*
+(Prompt includes intent, user request, base deterministic answer, and grounded match list.) Tj
+T*
+(System guardrail: never invent assessments, URLs, or unsupported claims.) Tj
+T*
+(Fallback behavior: if LLM unavailable/fails, return deterministic catalog response.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 1593 >>
+stream
+BT
+/F1 11 Tf
+50 800 Td
+14 TL
+(Evaluation, Failures, and Improvements) Tj
+T*
+() Tj
+T*
+(4\) Evaluation Method) Tj
+T*
+(Automated tests validate API schema and conversational behavior: clarify, recommend, refine, compare,) Tj
+T*
+(and refuse.) Tj
+T*
+(Groq fallback and schema stability are tested to ensure model use does not break contract.) Tj
+T*
+(Evaluation harness runs both custom traces and recruiter persona suite.) Tj
+T*
+(Persona suite covers: Java mid-level cognitive request, refinement with personality addition, data) Tj
+T*
+(analyst screening, named comparison, vague intake clarification, and out-of-scope refusal.) Tj
+T*
+(Captured metrics: recommendation_count, state, reply_source, llm_model, average_confidence.) Tj
+T*
+() Tj
+T*
+(5\) What Did Not Work Initially) Tj
+T*
+(Unconstrained generation for recommendations increased hallucination risk.) Tj
+T*
+(Overly strict reply-text assertions became brittle once Groq paraphrasing was enabled.) Tj
+T*
+(Frontend metadata badges added noise for demo/interview flow and were removed based on feedback.) Tj
+T*
+() Tj
+T*
+(6\) How Improvement Was Measured) Tj
+T*
+(Test pass rate after each change \(final backend status: all tests passing\).) Tj
+T*
+(Persona-trace outcomes to verify correct state transitions and recommendation relevance.) Tj
+T*
+(Groundedness checks: recommendations and URLs must come from catalog data.) Tj
+T*
+(Operational visibility via response metadata and confidence values.) Tj
+T*
+() Tj
+T*
+(Summary: The final system balances deterministic retrieval reliability with optional LLM readability) Tj
+T*
+(improvements.) Tj
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000323 00000 n 
+0000002113 00000 n 
+0000002239 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+3884
+%%EOF
